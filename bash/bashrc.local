@@ -1,0 +1,129 @@
+# ═══════════════════════════════════════════════════════════════════
+#  bash configuration — sourced from ~/.bashrc by install.sh
+#  This file is additive: your distro's ~/.bashrc stays untouched, so
+#  reinstalling or removing this repo can never break your shell.
+# ═══════════════════════════════════════════════════════════════════
+
+# Interactive shells only — never interfere with scp/rsync/scripts.
+case $- in
+    *i*) ;;
+      *) return;;
+esac
+
+# ── Terminal flow control ──────────────────────────────────────────
+# Frees Ctrl-S. By default Ctrl-S sends XOFF and freezes the terminal
+# dead, which looks like a crash and is a classic source of "my terminal
+# is broken". It also collides with tmux-resurrect's prefix + C-s.
+# Guarded: stty needs a real terminal, and errors noisily without one.
+[ -t 0 ] && stty -ixon 2>/dev/null
+
+# ── History ────────────────────────────────────────────────────────
+HISTSIZE=100000                  # commands kept in memory
+HISTFILESIZE=200000              # commands kept on disk
+HISTCONTROL=ignoreboth:erasedups # skip dupes and space-prefixed commands
+HISTTIMEFORMAT='%F %T  '         # timestamp every entry
+HISTIGNORE='ls:ll:la:cd:pwd:exit:clear:history:c'
+shopt -s histappend              # append, never clobber, the history file
+shopt -s cmdhist                 # keep multi-line commands as one entry
+shopt -s lithist                 # ...with real newlines, not semicolons
+
+# Flush each command to disk immediately so parallel tmux panes share
+# history instead of the last pane to exit overwriting everyone else's.
+case "$PROMPT_COMMAND" in
+    *__hist_sync*) ;;
+    *) __hist_sync() { history -a; }
+       PROMPT_COMMAND="__hist_sync${PROMPT_COMMAND:+; $PROMPT_COMMAND}" ;;
+esac
+
+# ── Shell behaviour ────────────────────────────────────────────────
+shopt -s checkwinsize            # keep $LINES/$COLUMNS right after resize
+shopt -s globstar                # ** matches paths recursively
+shopt -s cdspell                 # fix small typos in cd targets
+shopt -s dirspell                # ...and in directory completions
+shopt -s autocd                  # type a directory name to cd into it
+shopt -s no_empty_cmd_completion # don't scan $PATH on an empty Tab
+shopt -s checkjobs               # warn about running jobs before exit
+
+# ── Clipboard helpers ──────────────────────────────────────────────
+# Portable across Wayland, X11 and macOS, so these keep working when you
+# carry this repo to another machine.
+if command -v wl-copy >/dev/null 2>&1; then
+    clip()  { wl-copy --type text/plain; }
+    paste() { wl-paste --no-newline; }
+elif command -v xclip >/dev/null 2>&1; then
+    clip()  { xclip -selection clipboard -in; }
+    paste() { xclip -selection clipboard -out; }
+elif command -v xsel >/dev/null 2>&1; then
+    clip()  { xsel --clipboard --input; }
+    paste() { xsel --clipboard --output; }
+elif command -v pbcopy >/dev/null 2>&1; then
+    clip()  { pbcopy; }
+    paste() { pbpaste; }
+fi
+
+# Usage:  ls -l | clip        copy command output to the system clipboard
+#         paste > file.txt    dump the clipboard into a file
+#         cpwd                copy the current directory path
+#         cfile FILE          copy a file's contents
+cpwd()  { printf '%s' "$PWD" | clip && echo "copied: $PWD"; }
+cfile() { [ -f "$1" ] && clip < "$1" && echo "copied: $1" || echo "no such file: $1" >&2; }
+
+# ── Aliases ────────────────────────────────────────────────────────
+alias ll='ls -alFh --group-directories-first'
+alias la='ls -A'
+alias l='ls -CF'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias mkdir='mkdir -p'
+alias df='df -h'
+alias du='du -h'
+alias free='free -h'
+alias grep='grep --color=auto'
+alias fgrep='fgrep --color=auto'
+alias egrep='egrep --color=auto'
+alias diff='diff --color=auto'
+alias ip='ip -color=auto'
+
+# Ask before destroying things.
+alias rm='rm -I --preserve-root'
+alias mv='mv -i'
+alias cp='cp -i'
+
+# git
+alias gs='git status -sb'
+alias gd='git diff'
+alias gl='git log --oneline --graph --decorate -20'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+
+# tmux
+alias ta='tmux attach -t'
+alias tls='tmux ls'
+alias tn='tmux new -s'
+alias tk='tmux kill-session -t'
+
+# ── Environment ────────────────────────────────────────────────────
+export EDITOR="${EDITOR:-vim}"
+export VISUAL="$EDITOR"
+export LESS='-R -F -X -i -M'     # colour, quit-if-one-screen, case-insensitive
+export LESSHISTFILE=-            # no ~/.lesshst clutter
+export PAGER=less
+
+# Colourise man pages.
+export LESS_TERMCAP_md=$'\e[1;36m'   # bold      -> cyan
+export LESS_TERMCAP_me=$'\e[0m'
+export LESS_TERMCAP_us=$'\e[1;32m'   # underline -> green
+export LESS_TERMCAP_ue=$'\e[0m'
+export LESS_TERMCAP_so=$'\e[1;44;33m' # search highlight
+export LESS_TERMCAP_se=$'\e[0m'
+
+# ~/.local/bin on PATH, without duplicating it on every shell.
+case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) export PATH="$HOME/.local/bin:$PATH" ;;
+esac
+
+# ── Machine-local overrides ────────────────────────────────────────
+# Anything private or host-specific goes here; it is not tracked by git.
+[ -f ~/.bashrc.private ] && . ~/.bashrc.private

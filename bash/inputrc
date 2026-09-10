@@ -1,0 +1,72 @@
+# ═══════════════════════════════════════════════════════════════════
+#  readline configuration — symlinked to ~/.inputrc by install.sh
+#  Controls line editing and PASTE behaviour for bash, python, psql,
+#  gdb and every other readline program.
+#
+#  NOTE: readline does NOT strip trailing comments from `set` lines —
+#  `set bell-style none  # quiet` sets the value to "none  # quiet" and
+#  errors. Every comment here must sit on its own line.
+# ═══════════════════════════════════════════════════════════════════
+
+# Keep the system defaults, then override them below.
+$include /etc/inputrc
+
+# ── Paste safety (the big one) ─────────────────────────────────────
+# Bracketed paste: the terminal wraps pasted text in markers so readline
+# treats it as literal data. Without it, pasting several lines runs every
+# line immediately — including a half-finished last line — and pasting a
+# tab triggers completion instead of inserting a tab.
+set enable-bracketed-paste on
+
+# ── Completion ─────────────────────────────────────────────────────
+# Case-insensitive, and treat - and _ as equivalent.
+set completion-ignore-case on
+set completion-map-case on
+
+# One Tab lists the candidates instead of needing two.
+set show-all-if-ambiguous on
+set show-all-if-unmodified on
+
+# Colour completions by file type, like ls.
+set colored-stats on
+set colored-completion-prefix on
+set menu-complete-display-prefix on
+
+# Append / to completed symlinked directories.
+set mark-symlinked-directories on
+
+# Don't re-insert text that is already on the line.
+set skip-completed-text on
+
+# Ask before dumping a huge candidate list; never page it.
+set completion-query-items 200
+set page-completions off
+
+# ── Sanity ─────────────────────────────────────────────────────────
+# No terminal beep.
+set bell-style none
+
+# Don't echo ^C when you interrupt.
+set echo-control-characters off
+
+set horizontal-scroll-mode off
+
+# ── Keys ───────────────────────────────────────────────────────────
+# Up/Down search history for what you have already typed, rather than
+# blindly walking every previous command.
+"\e[A": history-search-backward
+"\e[B": history-search-forward
+
+# Ctrl+Left / Ctrl+Right jump a word (several terminal encodings).
+"\e[1;5C": forward-word
+"\e[1;5D": backward-word
+"\e[5C":   forward-word
+"\e[5D":   backward-word
+"\eOc":    forward-word
+"\eOd":    backward-word
+
+# Ctrl+Delete deletes the word ahead.
+"\e[3;5~": kill-word
+
+# Shift+Tab walks completions backwards.
+"\e[Z": menu-complete-backward
