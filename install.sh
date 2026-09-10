@@ -170,6 +170,24 @@ verify() {
     bash -ic 'true' >/dev/null 2>&1 && ok "~/.bashrc parses cleanly" \
         || { err "~/.bashrc has an error"; fail=1; }
 
+    # Regression guard. A helper named after a real command shadows it — and a
+    # *function* shadows it silently, discarding the arguments rather than
+    # erroring. `paste` (coreutils) and `gs` (Ghostscript) were both caught
+    # this way. The self-wrapping aliases (grep, rm, cp, ...) are deliberate
+    # and deliberately not listed here.
+    local shadowed="" n
+    for n in paste gs sed awk find sort tr cut join comm; do
+        command -v "$n" >/dev/null 2>&1 || continue
+        case "$(bash -ic "type -t $n" 2>/dev/null)" in
+            function|alias) shadowed="$shadowed $n" ;;
+        esac
+    done
+    if [ -z "$shadowed" ]; then
+        ok "no helper shadows a system command"
+    else
+        err "these system commands are shadowed by a helper:$shadowed"; fail=1
+    fi
+
     return $fail
 }
 

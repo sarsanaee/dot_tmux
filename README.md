@@ -105,10 +105,37 @@ selection — useful for grabbing text across split panes, which tmux cannot do.
 
 ```bash
 ls -l | clip        # pipe command output to the clipboard
-paste > out.txt     # write the clipboard to a file
+cpaste > out.txt    # write the clipboard to a file
 cpwd                # copy the current directory path
 cfile config.yaml   # copy a file's contents
 ```
+
+## Vim
+
+Paired with [dotvim](https://github.com/sarsanaee/dotvim). Four settings here
+exist for that pairing, and one of them does nothing on its own:
+
+- **`focus-events on` needs a second half.** It only forwards focus to an
+  application that has *asked* the terminal to report it. Vim on Ubuntu is
+  built with `+terminfo`, and neither `xterm-256color` nor `tmux-256color`
+  carries a focus-reporting capability — so Vim's `t_fe` comes up empty, it
+  never sends the request, and `FocusGained` never fires no matter what is set
+  here. dotvim's vimrc supplies `t_fe`/`t_fd` and the `<FocusGained>` key codes.
+  Without that, this line is inert.
+- **`mouse on` vs Vim's `mouse=a`.** Vim takes the mouse while it runs: drag
+  selects in the buffer, dragging a split border resizes it. Hold **Shift** to
+  fall through to the terminal's own selection, the same escape hatch that
+  works for grabbing text across tmux panes.
+- **True colour.** `terminal-overrides ...:RGB` plus `COLORTERM` surviving into
+  the pane is what lets Vim switch on `termguicolors`. Inside tmux, Vim also
+  has to be handed the RGB escapes by hand (`t_8f`/`t_8b`) — terminfo does not
+  advertise them.
+- **`escape-time 0`** keeps `Esc` instant in Vim rather than waiting to see
+  whether an escape sequence follows.
+
+The `smcup@:rmcup@` override applies to tmux and the terminal *outside* it, not
+to Vim inside tmux — Vim still restores your shell on `:q`. Checked, not
+assumed.
 
 ## What else the bash config fixes
 
@@ -121,6 +148,20 @@ cfile config.yaml   # copy a file's contents
   flushed after every command so panes stop overwriting each other's history.
 - **Up/Down search history by prefix** instead of walking every command.
 - `Ctrl+Left` / `Ctrl+Right` word jumps, case-insensitive completion, no bell.
+
+### Names that used to collide
+
+Two helpers were named after commands that already exist. Both were renamed;
+the old names now do what they always did.
+
+| Was | Now | Why |
+|-----|-----|-----|
+| `paste` | `cpaste` | `paste` is coreutils — it merges lines from several files. A shell *function* of that name shadowed it and silently discarded its arguments, so `paste a b` returned the clipboard instead of the merged files. Wrong output, no error. |
+| `gs` | `gst` | `gs` is Ghostscript. The alias turned `gs file.pdf` into `git status -sb file.pdf`. |
+
+The self-wrapping aliases (`grep`, `rm`, `mv`, `cp`, `df`, `du`, `ip`, `diff`,
+`mkdir`, `free`) shadow their own commands on purpose — that is the point of
+them. `\grep` or `command grep` bypasses one when you need the bare version.
 
 ## tmux plugins
 

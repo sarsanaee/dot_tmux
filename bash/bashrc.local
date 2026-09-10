@@ -47,22 +47,26 @@ shopt -s checkjobs               # warn about running jobs before exit
 # ── Clipboard helpers ──────────────────────────────────────────────
 # Portable across Wayland, X11 and macOS, so these keep working when you
 # carry this repo to another machine.
+# NOTE: the read side is `cpaste`, not `paste`. `paste` is coreutils —
+# it merges lines from several files — and a shell function of that name
+# shadows it and silently discards its arguments, so `paste a b` returns
+# the clipboard instead of the merged files. Wrong output, no error.
 if command -v wl-copy >/dev/null 2>&1; then
-    clip()  { wl-copy --type text/plain; }
-    paste() { wl-paste --no-newline; }
+    clip()   { wl-copy --type text/plain; }
+    cpaste() { wl-paste --no-newline; }
 elif command -v xclip >/dev/null 2>&1; then
-    clip()  { xclip -selection clipboard -in; }
-    paste() { xclip -selection clipboard -out; }
+    clip()   { xclip -selection clipboard -in; }
+    cpaste() { xclip -selection clipboard -out; }
 elif command -v xsel >/dev/null 2>&1; then
-    clip()  { xsel --clipboard --input; }
-    paste() { xsel --clipboard --output; }
+    clip()   { xsel --clipboard --input; }
+    cpaste() { xsel --clipboard --output; }
 elif command -v pbcopy >/dev/null 2>&1; then
-    clip()  { pbcopy; }
-    paste() { pbpaste; }
+    clip()   { pbcopy; }
+    cpaste() { pbpaste; }
 fi
 
 # Usage:  ls -l | clip        copy command output to the system clipboard
-#         paste > file.txt    dump the clipboard into a file
+#         cpaste > file.txt   dump the clipboard into a file
 #         cpwd                copy the current directory path
 #         cfile FILE          copy a file's contents
 cpwd()  { printf '%s' "$PWD" | clip && echo "copied: $PWD"; }
@@ -89,8 +93,9 @@ alias rm='rm -I --preserve-root'
 alias mv='mv -i'
 alias cp='cp -i'
 
-# git
-alias gs='git status -sb'
+# git. `gst`, not `gs`: gs is Ghostscript, and shadowing it turns
+# `gs file.pdf` into `git status -sb file.pdf`.
+alias gst='git status -sb'
 alias gd='git diff'
 alias gl='git log --oneline --graph --decorate -20'
 alias ga='git add'
