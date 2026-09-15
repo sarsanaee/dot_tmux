@@ -161,7 +161,10 @@ verify() {
         err "tmux refused to load the config"; fail=1
     fi
 
-    if command -v wl-copy >/dev/null 2>&1 || command -v xclip >/dev/null 2>&1; then
+    # xsel and pbcopy were missing here, so a working macOS (or xsel-only)
+    # setup was reported as having no clipboard at all.
+    if command -v wl-copy >/dev/null 2>&1 || command -v xclip >/dev/null 2>&1 \
+       || command -v xsel >/dev/null 2>&1 || command -v pbcopy >/dev/null 2>&1; then
         ok "clipboard bridge available"
     else
         warn "no clipboard tool found"
