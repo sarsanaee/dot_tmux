@@ -14,6 +14,7 @@ set -euo pipefail
 REPO="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 BACKUP="$HOME/.dotfiles-backup/$(date +%Y%m%d-%H%M%S)"
 MARKER="# >>> dot_tmux bashrc.local >>>"
+ZMARKER="# >>> dot_tmux zshrc.local >>>"
 DRY_RUN=0
 NO_DEPS=0
 
@@ -123,6 +124,43 @@ EOF
     ok "~/.bashrc now sources bash/bashrc.local"
 }
 
+# ── 3b. Hook zshrc.local into ~/.zshrc (idempotently) ──────────────
+# zsh has been the default login shell on macOS since Catalina, and it never
+# reads ~/.bashrc — so on those machines everything in bash/bashrc.local was
+# configured and then silently never loaded.
+hook_zshrc() {
+    info "Wiring zsh configuration into ~/.zshrc"
+    local rc="$HOME/.zshrc"
+
+    if [ ! -f "$REPO/zsh/zshrc.local" ]; then
+        warn "no zsh/zshrc.local in this repo; skipping"
+        return 0
+    fi
+
+    [ -f "$rc" ] || run touch "$rc"
+
+    if grep -qF "$ZMARKER" "$rc" 2>/dev/null; then
+        ok "~/.zshrc already sources zshrc.local"
+        return 0
+    fi
+
+    run mkdir -p "$BACKUP"
+    run cp "$rc" "$BACKUP/zshrc"
+
+    if [ "$DRY_RUN" = 1 ]; then
+        printf '  [dry-run] append source block to %s\n' "$rc"
+    else
+        cat >> "$rc" <<EOF
+
+$ZMARKER
+# Managed by $REPO — edit zsh/zshrc.local there, not here.
+[ -f "$REPO/zsh/zshrc.local" ] && . "$REPO/zsh/zshrc.local"
+# <<< dot_tmux zshrc.local <<<
+EOF
+    fi
+    ok "~/.zshrc now sources zsh/zshrc.local"
+}
+
 # ── 4. TPM + tmux plugins ──────────────────────────────────────────
 install_tpm() {
     info "Installing tmux plugin manager and plugins"
@@ -161,7 +199,10 @@ verify() {
         err "tmux refused to load the config"; fail=1
     fi
 
-    if command -v wl-copy >/dev/null 2>&1 || command -v xclip >/dev/null 2>&1; then
+    # xsel and pbcopy were missing here, so a working macOS (or xsel-only)
+    # setup was reported as having no clipboard at all.
+    if command -v wl-copy >/dev/null 2>&1 || command -v xclip >/dev/null 2>&1 \
+       || command -v xsel >/dev/null 2>&1 || command -v pbcopy >/dev/null 2>&1; then
         ok "clipboard bridge available"
     else
         warn "no clipboard tool found"
@@ -169,6 +210,11 @@ verify() {
 
     bash -ic 'true' >/dev/null 2>&1 && ok "~/.bashrc parses cleanly" \
         || { err "~/.bashrc has an error"; fail=1; }
+
+    if [ -f "$REPO/zsh/zshrc.local" ] && command -v zsh >/dev/null 2>&1; then
+        zsh -ic 'true' >/dev/null 2>&1 && ok "~/.zshrc parses cleanly" \
+            || { err "~/.zshrc has an error"; fail=1; }
+    fi
 
     # Regression guard. A helper named after a real command shadows it — and a
     # *function* shadows it silently, discarding the arguments rather than
@@ -202,6 +248,7 @@ main() {
     link "$REPO/bash/inputrc"   "$HOME/.inputrc"
 
     hook_bashrc
+    hook_zshrc
     install_tpm
     verify || { printf '\n%sInstall finished with problems.%s\n' "$R" "$N"; exit 1; }
 
