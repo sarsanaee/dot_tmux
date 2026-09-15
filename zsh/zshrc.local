@@ -1,0 +1,332 @@
+# ═══════════════════════════════════════════════════════════════════
+#  zsh configuration — sourced from ~/.zshrc by install.sh
+#
+#  The companion to bash/bashrc.local, for machines where the login shell
+#  is zsh (every macOS since Catalina). zsh never reads ~/.bashrc, so
+#  without this file none of the history settings, clipboard helpers or
+#  aliases in this repo reach the shell you are actually typing into.
+#
+#  Flag choices differ from the bash file where BSD userland differs from
+#  GNU; each such spot is marked. Kept additive, so removing this repo
+#  cannot break the shell.
+# ═══════════════════════════════════════════════════════════════════
+
+# Sourced from a non-interactive shell (scp, rsync, a script)? Do nothing.
+[[ -o interactive ]] || return
+
+# ── Terminal flow control ──────────────────────────────────────────
+# Frees Ctrl-S, which otherwise sends XOFF and freezes the terminal dead —
+# indistinguishable from a crash, and a collision with tmux-resurrect's
+# `prefix + C-s`. Guarded: stty needs a real tty and errors without one.
+[[ -t 0 ]] && stty -ixon 2>/dev/null
+
+# ═══════════════════════════════════════════════════════════════════
+#  HISTORY
+# ═══════════════════════════════════════════════════════════════════
+HISTFILE="$HOME/.zsh_history"
+HISTSIZE=100000                  # commands kept in memory
+SAVEHIST=200000                  # commands kept on disk
+
+setopt EXTENDED_HISTORY          # timestamp + duration per entry
+setopt INC_APPEND_HISTORY_TIME   # write as each command finishes, not at exit,
+                                 # so parallel tmux panes accumulate history
+                                 # instead of the last one to exit winning
+setopt HIST_IGNORE_ALL_DUPS      # a repeat removes the older copy
+setopt HIST_IGNORE_SPACE         # a leading space keeps it out of history
+setopt HIST_REDUCE_BLANKS        # tidy whitespace before storing
+setopt HIST_VERIFY               # expand !! onto the line for review, never
+                                 # run it straight off the bat
+setopt HIST_NO_STORE             # don't record `history` calls themselves
+
+# zsh has no HISTIGNORE. This is the equivalent: refuse to store the noise.
+zshaddhistory() {
+    emulate -L zsh
+    [[ ${1%%$'\n'} =~ '^(ls|ll|la|l|cd|pwd|exit|clear|c|history)$' ]] && return 1
+    return 0
+}
+
+# ── SHARE_HISTORY is deliberately OFF ──────────────────────────────
+# It would also *import* other panes' commands into this pane's Up-arrow,
+# so scrolling back in one tmux pane surfaces things typed in another.
+# INC_APPEND_HISTORY_TIME above already gives the durability half without
+# that cross-talk. Turn it on in ~/.zshrc.private if you prefer the mixing.
+
+# ═══════════════════════════════════════════════════════════════════
+#  SHELL BEHAVIOUR
+# ═══════════════════════════════════════════════════════════════════
+setopt AUTO_CD                   # bare directory name means cd there
+setopt AUTO_PUSHD                # every cd pushes onto the dir stack...
+setopt PUSHD_IGNORE_DUPS         # ...without piling up duplicates
+setopt PUSHD_SILENT              # and without printing the stack each time
+setopt EXTENDED_GLOB             # #, ~ and ^ become glob operators
+setopt GLOB_DOTS                 # * also matches dotfiles
+setopt NO_CASE_GLOB              # case-insensitive globbing, like macOS's fs
+setopt CORRECT                   # offer a fix for a mistyped command name
+setopt INTERACTIVE_COMMENTS      # allow # comments when typing interactively
+setopt LONG_LIST_JOBS            # show PIDs in the jobs list
+setopt NOTIFY                    # report a finished background job at once
+setopt CHECK_JOBS                # warn about running jobs before exiting
+unsetopt BEEP                    # the vimrc sets belloff=all; match it
+unsetopt FLOW_CONTROL            # reinforces the stty -ixon above
+
+# `**/` recurses natively in zsh, so bash's globstar needs no equivalent.
+
+# ═══════════════════════════════════════════════════════════════════
+#  COMPLETION
+# ═══════════════════════════════════════════════════════════════════
+# Cache the dump under ~/.cache so $HOME stays clean, and only rebuild it
+# once a day — compinit stat()ing every fpath entry on every shell start is
+# the single biggest cause of slow zsh startup.
+_zcompdump="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompdump"
+[[ -d ${_zcompdump:h} ]] || mkdir -p "${_zcompdump:h}"
+
+# Homebrew's completions live outside the default fpath; add them if present.
+# Must happen before compinit or they are invisible.
+if [[ -n ${HOMEBREW_PREFIX-} && -d $HOMEBREW_PREFIX/share/zsh/site-functions ]]; then
+    fpath=("$HOMEBREW_PREFIX/share/zsh/site-functions" $fpath)
+fi
+
+autoload -Uz compinit
+if [[ -n ${_zcompdump}(#qN.mh-24) ]]; then
+    compinit -C -d "$_zcompdump"      # fresh enough: skip the security scan
+else
+    compinit    -d "$_zcompdump"
+fi
+unset _zcompdump
+
+zstyle ':completion:*' menu select                     # arrow-key menu
+zstyle ':completion:*' group-name ''                   # group by category
+zstyle ':completion:*' verbose true
+zstyle ':completion:*:descriptions' format '%F{yellow}%B%d%b%f'
+zstyle ':completion:*:warnings'     format '%F{red}no matches%f'
+# Case-insensitive, then partial-word, then substring — tried in order, so an
+# exact match always wins and the loose rules only apply when it finds nothing.
+zstyle ':completion:*' matcher-list \
+    'm:{[:lower:][:upper:]}={[:upper:][:lower:]}' \
+    'r:|[._-]=* r:|=*' \
+    'l:|=* r:|=*'
+zstyle ':completion:*' use-cache on
+zstyle ':completion:*' cache-path "${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompcache"
+zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#)*=0=01;31'
+zstyle ':completion:*:kill:*' force-list always
+# Don't offer the file you are already at, e.g. `mv foo.c <TAB>`.
+zstyle ':completion:*' ignore-parents parent pwd
+
+# ═══════════════════════════════════════════════════════════════════
+#  KEY BINDINGS
+# ═══════════════════════════════════════════════════════════════════
+# emacs bindings on the command line even though mode-keys is vi in tmux and
+# the vimrc is vi — a modal prompt costs more than it gives at a one-line
+# prompt, and Ctrl-A/Ctrl-E/Ctrl-R stay where every other program puts them.
+bindkey -e
+
+# Up/Down search history for what has already been typed, rather than walking
+# every command blindly. This is the single highest-value binding here.
+autoload -Uz up-line-or-beginning-search down-line-or-beginning-search
+zle -N up-line-or-beginning-search
+zle -N down-line-or-beginning-search
+bindkey '^[[A' up-line-or-beginning-search      # Up
+bindkey '^[[B' down-line-or-beginning-search    # Down
+bindkey '^P'   up-line-or-beginning-search
+bindkey '^N'   down-line-or-beginning-search
+
+bindkey '^[[1;5C' forward-word                  # Ctrl-Right
+bindkey '^[[1;5D' backward-word                 # Ctrl-Left
+bindkey '^[[1;3C' forward-word                  # Alt-Right  (Option-as-Meta)
+bindkey '^[[1;3D' backward-word                 # Alt-Left
+bindkey '^[[3~'   delete-char                   # Del
+bindkey '^[[H'    beginning-of-line
+bindkey '^[[F'    end-of-line
+bindkey '^U'      backward-kill-line            # bash's Ctrl-U, not zsh's
+bindkey '^[^?'    backward-kill-word            # Alt-Backspace
+
+# Treat path separators as word boundaries so Alt-Backspace eats one path
+# component at a time instead of the whole argument.
+autoload -Uz select-word-style
+select-word-style bash
+
+# Ctrl-X Ctrl-E opens the current line in $EDITOR, as in bash.
+autoload -Uz edit-command-line
+zle -N edit-command-line
+bindkey '^X^E' edit-command-line
+
+# ═══════════════════════════════════════════════════════════════════
+#  CLIPBOARD HELPERS
+# ═══════════════════════════════════════════════════════════════════
+# Same names and same ordering as bash/bashrc.local, so muscle memory
+# carries between machines.
+#
+# NOTE (unchanged from the bash file, and worth repeating): the read side is
+# `cpaste`, not `paste`. `paste` is a real command — it merges lines from
+# several files — and a shell function of that name shadows it silently,
+# discarding its arguments. install.sh's verify() guards against exactly this.
+if (( $+commands[wl-copy] )); then
+    clip()   { wl-copy --type text/plain; }
+    cpaste() { wl-paste --no-newline; }
+elif (( $+commands[xclip] )); then
+    clip()   { xclip -selection clipboard -in; }
+    cpaste() { xclip -selection clipboard -out; }
+elif (( $+commands[xsel] )); then
+    clip()   { xsel --clipboard --input; }
+    cpaste() { xsel --clipboard --output; }
+elif (( $+commands[pbcopy] )); then
+    clip()   { pbcopy; }
+    cpaste() { pbpaste; }
+fi
+
+# Usage:  ls -l | clip        copy command output to the system clipboard
+#         cpaste > file.txt   dump the clipboard into a file
+#         cpwd                copy the current directory path
+#         cfile FILE          copy a file's contents
+cpwd()  { printf '%s' "$PWD" | clip && print -r -- "copied: $PWD"; }
+cfile() {
+    [[ -f $1 ]] || { print -ru2 -- "no such file: $1"; return 1; }
+    clip < "$1" && print -r -- "copied: $1"
+}
+
+# ═══════════════════════════════════════════════════════════════════
+#  ALIASES
+#
+#  macOS ships a BSD userland, so several GNU flags used in the bash file
+#  do not exist here. Where Homebrew coreutils is installed the GNU tool is
+#  preferred (it arrives prefixed with `g`), otherwise a BSD equivalent is
+#  used. Divergences are called out individually.
+# ═══════════════════════════════════════════════════════════════════
+if (( $+commands[gls] )); then
+    # GNU coreutils via `brew install coreutils`.
+    alias ls='gls --color=auto --group-directories-first'
+    alias ll='gls -alFh --color=auto --group-directories-first'
+else
+    # BSD ls: colour is -G, and --group-directories-first does not exist.
+    export CLICOLOR=1
+    alias ll='ls -alFhG'
+fi
+alias la='ls -A'
+alias l='ls -CF'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias ....='cd ../../..'
+alias mkdir='mkdir -p'
+alias df='df -h'
+alias du='du -h'
+
+alias grep='grep --color=auto'     # BSD grep does support --color
+alias fgrep='fgrep --color=auto'
+alias egrep='egrep --color=auto'
+
+# BSD diff has no --color, so aliasing it unconditionally (as the bash file
+# does) makes every `diff` fail. Use GNU diff when Homebrew provides it.
+if (( $+commands[gdiff] )); then
+    alias diff='gdiff --color=auto'
+fi
+
+# `free` and `ip` are Linux-only; the bash file's aliases for them would be
+# dead commands here. These are the macOS counterparts, under names that
+# shadow nothing.
+alias meminfo='vm_stat'
+myip() {
+    print -r -- "lan:    $(ipconfig getifaddr en0 2>/dev/null || print -r -- 'not connected')"
+    print -r -- "public: $(curl -fsS --max-time 5 https://ifconfig.me 2>/dev/null || print -r -- unavailable)"
+}
+
+# ── Ask before destroying things ───────────────────────────────────
+# The bash file uses `rm -I --preserve-root`. BSD rm accepts -I (prompt once
+# for three-or-more files) but has no --preserve-root at all, so that exact
+# alias makes every `rm` die with "illegal option". -I alone is the portable
+# part; `rm -rf /` is already refused by macOS via System Integrity
+# Protection, which is what --preserve-root was guarding.
+alias rm='rm -I'
+alias mv='mv -i'
+alias cp='cp -i'
+
+# git. `gst`, not `gs`: gs is Ghostscript, and shadowing it turns
+# `gs file.pdf` into `git status -sb file.pdf`.
+alias gst='git status -sb'
+alias gd='git diff'
+alias gl='git log --oneline --graph --decorate -20'
+alias ga='git add'
+alias gc='git commit'
+alias gp='git push'
+
+# tmux
+alias ta='tmux attach -t'
+alias tls='tmux ls'
+alias tn='tmux new -s'
+alias tk='tmux kill-session -t'
+# Attach to a session called "main" or create it. The usual entry point.
+tm() { tmux attach -t "${1:-main}" 2>/dev/null || tmux new -s "${1:-main}"; }
+
+# ═══════════════════════════════════════════════════════════════════
+#  ENVIRONMENT
+# ═══════════════════════════════════════════════════════════════════
+export EDITOR="${EDITOR:-vim}"
+export VISUAL="$EDITOR"
+export LESS='-R -F -X -i -M'     # colour, quit-if-one-screen, case-insensitive
+export LESSHISTFILE=-            # no ~/.lesshst clutter
+export PAGER=less
+
+# Colourise man pages.
+export LESS_TERMCAP_md=$'\e[1;36m'    # bold      -> cyan
+export LESS_TERMCAP_me=$'\e[0m'
+export LESS_TERMCAP_us=$'\e[1;32m'    # underline -> green
+export LESS_TERMCAP_ue=$'\e[0m'
+export LESS_TERMCAP_so=$'\e[1;44;33m' # search highlight
+export LESS_TERMCAP_se=$'\e[0m'
+
+# `typeset -U path` makes zsh keep $PATH de-duplicated on its own, so adding
+# an entry twice (or re-sourcing this file) can never grow it.
+typeset -U path fpath
+path=("$HOME/.local/bin" $path)
+
+# ═══════════════════════════════════════════════════════════════════
+#  PROMPT
+#
+#  Two lines, so a long path or branch name never pushes the cursor to the
+#  right-hand edge. Colours are ANSI indices 0-15, which the terminal
+#  profile maps to gruvbox — the same palette the vimrc and tmux status bar
+#  use, so all three agree.
+# ═══════════════════════════════════════════════════════════════════
+setopt PROMPT_SUBST
+
+autoload -Uz vcs_info
+zstyle ':vcs_info:*'        enable git
+zstyle ':vcs_info:git:*'    formats       ' %F{3}%b%f%F{1}%u%c%f'
+zstyle ':vcs_info:git:*'    actionformats ' %F{3}%b%f %F{1}(%a)%f%F{1}%u%c%f'
+zstyle ':vcs_info:*'        check-for-changes true     # populate %u and %c
+zstyle ':vcs_info:*'        unstagedstr   ' ●'         # tracked file modified
+zstyle ':vcs_info:*'        stagedstr     ' ✚'         # change staged
+
+# check-for-changes runs the equivalent of `git diff` on every prompt. That is
+# imperceptible in an ordinary repo, but noticeable in a very large one (a
+# kernel tree). If the prompt ever feels sluggish after cd-ing into a monorepo,
+# set `zstyle ':vcs_info:*' check-for-changes false` in ~/.zshrc.private — the
+# branch name stays, only the ●/✚ markers go.
+
+autoload -Uz add-zsh-hook
+add-zsh-hook precmd vcs_info
+
+# %(?..) tests the previous exit status: green prompt on success, red plus the
+# actual code on failure — so a silent non-zero exit cannot slip past.
+PROMPT='%F{4}%~%f${vcs_info_msg_0_}
+%(?.%F{2}.%F{1}%? )❯%f '
+# Right side: user@host, but only over SSH, where it is the thing you most
+# need to know before pressing Enter.
+RPROMPT='${SSH_TTY:+%F{8}%n@%m%f}'
+
+# ── Window / tab title ─────────────────────────────────────────────
+# Terminal.app's own "show active process" only ever reports the shell once
+# tmux or ssh is in the way. Show the directory at the prompt, and the running
+# command while one is in flight.
+_set_title_dir() { print -Pn '\e]0;%~\a'; }
+# printf, not `print -P`: the command line is data, and -P would try to expand
+# a literal % in it as a prompt escape. Non-printables are stripped so a
+# control character cannot break out of the OSC sequence.
+_set_title_cmd() { printf '\e]0;%s\a' "${1//[^[:print:]]/}"; }
+add-zsh-hook precmd  _set_title_dir
+add-zsh-hook preexec _set_title_cmd
+
+# ═══════════════════════════════════════════════════════════════════
+#  MACHINE-LOCAL OVERRIDES
+#  Anything private or host-specific goes here; it is not tracked by git.
+# ═══════════════════════════════════════════════════════════════════
+[[ -f ~/.zshrc.private ]] && source ~/.zshrc.private
